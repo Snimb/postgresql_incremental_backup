@@ -1,2 +1,44 @@
+# Ignore Ansible logs
+ansible.log
+
+# Ignore temporary or backup files created by text editors
+*.swp
+*.bak
+*.tmp
+*.orig
+*.rej
+*~
+
+# Ignore secrets and environment variables
+*.vault
+*.enc
+.vault_pass.txt
+.env
+.secret
+
+# Ignore SSH private keys and related files
+*.pem
+*.key
+*.priv
+
+# Ignore role dependencies installed by Ansible Galaxy
+roles/requirements.yml
+roles/*/meta/.galaxy_install_info
+
+# Ignore virtual environments and Python dependencies
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore cloud credential files
+*.tfstate
+*.tfstate.backup
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE/editor files
 .idea/
 .vscode/
