@@ -1,0 +1,7 @@
+database_parameters:
+  - "ALTER SYSTEM SET listen_addresses='*';"
+  - "ALTER SYSTEM SET max_wal_senders='10';"
+  - "ALTER SYSTEM SET wal_level='replica';"
+  - "ALTER SYSTEM SET summarize_wal='on';"
+  - "ALTER SYSTEM SET archive_mode='on';"
+  - "ALTER SYSTEM SET archive_command='false';"

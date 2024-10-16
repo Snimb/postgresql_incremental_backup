@@ -1,0 +1,66 @@
+- name: Get Latest Full Backup Directory on Backup Server
+  ansible.builtin.shell: |
+    ls -td {{ pgbkup }}/full* 2>/dev/null | head -n 1
+  become_user: "{{ pguser }}"
+  register: latest_full_backup
+  retries: 3
+  delay: 10
+  until: latest_full_backup.rc == 0
+
+- name: Debug the value of the latest full backup directory
+  ansible.builtin.debug:
+    msg: "Latest full backup directory: '{{ latest_full_backup.stdout }}'"
+
+- name: Set fact if full backup exists
+  ansible.builtin.set_fact:
+    full_backup_exists: "{{ latest_full_backup.stdout | length > 0 }}"
+
+- name: Debug if a full backup exists
+  ansible.builtin.debug:
+    msg: "Full backup exists: {{ full_backup_exists }}"
+
+- name: Get Latest Incremental Backup Directory (if exists)
+  ansible.builtin.shell: |
+    ls -td {{ latest_full_backup.stdout }}/incremental_* 2>/dev/null | head -n 1
+  become_user: "{{ pguser }}"
+  register: latest_incremental_backup
+  when: full_backup_exists
+
+- name: Set fact if incremental backup exists
+  ansible.builtin.set_fact:
+    incremental_backup_exists: "{{ latest_incremental_backup.stdout | length > 0 }}"
+  when: full_backup_exists
+
+- name: Debug the latest incremental backup directory
+  ansible.builtin.debug:
+    msg: "Latest incremental backup directory: '{{ latest_incremental_backup.stdout }}'"
+  when: incremental_backup_exists
+
+- name: Determine the manifest to use (full or incremental)
+  ansible.builtin.set_fact:
+    backup_manifest: >-
+      {{
+        (incremental_backup_exists and latest_incremental_backup.stdout + '/backup_manifest')
+        or (latest_full_backup.stdout + '/backup_manifest')
+      }}
+
+- name: Debug the backup manifest being used
+  ansible.builtin.debug:
+    msg: "Backup manifest used: {{ backup_manifest }}"
+
+- name: Perform Incremental Backup and Save to Backup Server Directory
+  ansible.builtin.shell: |
+    latest_full_backup="{{ latest_full_backup.stdout | trim }}"
+    incremental_backup_dir="${latest_full_backup}/incremental_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+    mkdir -p ${incremental_backup_dir}
+    pg_basebackup -h {{ db_ip }} -U {{ backupuser }} -p {{ pgport }} --incremental={{ backup_manifest }} -Ft --gzip --wal-method=none --progress --manifest-checksums=SHA256 -D ${incremental_backup_dir}
+  become_user: "{{ pguser }}"
+  when: full_backup_exists
+  register: incremental_backup_result
+  retries: 3
+  delay: 30
+  until: incremental_backup_result.rc == 0
+
+- name: Debug the incremental backup result
+  ansible.builtin.debug:
+    msg: "Incremental backup completed with directory: {{ incremental_backup_result }}"

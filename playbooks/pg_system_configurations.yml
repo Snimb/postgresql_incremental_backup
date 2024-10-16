@@ -1,0 +1,13 @@
+- name: PostgreSQL configurations on db_server
+  hosts: db_server
+  become: true
+  tasks:
+    - name: Perform full backup every Sunday
+      import_tasks: ../roles/system/tasks/configurations_db.yml
+
+- name: PostgreSQL configurations on backup_server
+  hosts: backup_server
+  become: true
+  tasks:
+    - name: Perform full backup every Sunday
+      import_tasks: ../roles/system/tasks/configurations_bkupserver.yml

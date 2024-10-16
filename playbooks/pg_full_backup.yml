@@ -1,0 +1,20 @@
+- name: PostgreSQL streaming WAL setup
+  hosts: db_server
+  become_user: "{{ pguser }}"  
+  become: true
+  tasks:
+    - name: Perform WAL streaming setup on db_server
+      import_tasks: ../roles/backup/tasks/wal_streaming_db.yml
+      register: wal_streaming_dbpg_result
+
+- name: PostgreSQL Backup and WAL streaming setup
+  hosts: backup_server
+  become_user: "{{ pguser }}"  
+  become: true
+  tasks:
+    - name: Perform full backup
+      import_tasks: ../roles/backup/tasks/full_backup.yml
+
+    - name: Perform WAL streaming setup on backup_server
+      import_tasks: ../roles/backup/tasks/wal_streaming_bkupserver.yml
+

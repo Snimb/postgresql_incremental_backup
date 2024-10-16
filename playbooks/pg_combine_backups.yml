@@ -1,0 +1,7 @@
+- name: Combine Full and Incremental Backups into a New Full Backup using pg_combinebackup
+  hosts: backup_server
+  become_user: "{{ pguser }}"
+  become: true
+  tasks:
+    - name: Restore backup for verification
+      import_tasks: ../roles/backup/tasks/combine_backups.yml

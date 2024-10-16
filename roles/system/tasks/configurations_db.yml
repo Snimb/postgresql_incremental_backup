@@ -1,0 +1,74 @@
+- name: Ensure the backup server's hostname is resolvable
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ backup_server_ip }} {{ backup_server_name }}"
+    state: present
+  become_method: ansible.builtin.sudo
+
+- name: Ensure the backup server's hostname is resolvable
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ db_ip }} {{ db_name }}"
+    state: present
+  become_method: ansible.builtin.sudo
+    
+- name: Open port 5432 on the firewall (PostgreSQL)
+  ansible.builtin.command:
+    cmd: "firewall-cmd --add-port=5432/tcp --permanent"
+  become_method: ansible.builtin.sudo
+
+- name: Reload firewall to apply changes
+  ansible.builtin.command:
+    cmd: "firewall-cmd --reload"
+  become_method: ansible.builtin.sudo
+
+- name: Set database parameters
+  ansible.builtin.command:
+    cmd: "{{ pgbin }}/psql -c \"{{ item }}\""
+  become_user: "{{ pguser }}"
+  with_items:
+   - "{{ database_parameters }}"
+
+- name: Allow backup server to connect for replication in pg_hba.conf
+  ansible.builtin.lineinfile:
+    path: "{{ pgdata }}/pg_hba.conf"
+    insertafter: EOF
+    line: "host    replication     {{ backupuser }}        {{ backup_server_ip }}/32       trust"
+    state: present
+  become_user: "{{ pguser }}"
+
+- name: Allow backup server to connect in pg_hba.conf
+  ansible.builtin.lineinfile:
+    path: "{{ pgdata }}/pg_hba.conf"
+    insertafter: EOF
+    line: "host    all             all             {{ backup_server_ip }}/32       trust"
+    state: present
+  become_user: "{{ pguser }}" 
+
+- name: Allow db server to connect in pg_hba.conf
+  ansible.builtin.lineinfile:
+    path: "{{ pgdata }}/pg_hba.conf"
+    insertafter: EOF
+    line: "host    all             all             {{ db_ip }}/32       trust"
+    state: present
+  become_user: "{{ pguser }}" 
+
+- name: Replace scram-sha-256 or md5 authentication for localhost with trust
+  ansible.builtin.lineinfile:
+    path: "{{ pgdata }}/pg_hba.conf"
+    regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+(scram-sha-256|md5|password|peer)'
+    line: 'host    all             all             127.0.0.1/32            trust'
+  become_user: "{{ pguser }}" 
+ 
+
+- name: Replace scram-sha-256 or md5 authentication for localhost with trust
+  ansible.builtin.lineinfile:
+    path: "{{ pgdata }}/pg_hba.conf"
+    regexp: '^host\s+all\s+all\s+::1/128\s+(scram-sha-256|md5|password|peer)'
+    line: 'host    all             all             ::1/128                 trust'
+  become_user: "{{ pguser }}" 
+
+- name: Reload PostgreSQL configuration
+  ansible.builtin.command:
+    cmd: "{{ pgbin }}/pg_ctl restart -D {{ pgdata }}"
+  become_user: "{{ pguser }}"

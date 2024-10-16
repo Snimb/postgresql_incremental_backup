@@ -1,0 +1,7 @@
+- name: PostgreSQL Backup
+  hosts: backup_server
+  become_user: "{{ pguser }}"  
+  become: true
+  tasks:
+    - name: Perform incremental backup on weekdays
+      import_tasks: ../roles/backup/tasks/incremental_backup.yml

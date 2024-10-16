@@ -1,0 +1,7 @@
+---
+- name: Verify Restored Backup
+  shell: |
+    {{ verification_script }} /var/lib/pgsql/test_restore/
+  register: verify_result
+  retries: 2
+  until: verify_result is succeeded

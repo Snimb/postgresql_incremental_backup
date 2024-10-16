@@ -1,0 +1,28 @@
+- name: Create replication user on db_server
+  ansible.builtin.shell: |
+    psql -U {{ pguser }} -h {{ pghost }} -d {{ pgdatabase }} -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ backupuser }}') THEN CREATE ROLE {{ backupuser }} WITH REPLICATION LOGIN; END IF; END \$\$;"
+  register: create_user_result
+  retries: 3
+  delay: 10
+  until: create_user_result.rc == 0
+
+- name: Check if replication slot 'backup_server_slot' exists
+  ansible.builtin.shell: |
+    psql -U {{ pguser }} -h {{ pghost }} -d {{ pgdatabase }} -tAc "SELECT 1 FROM pg_replication_slots WHERE slot_name = 'backup_server_slot';"
+  register: check_replication_slot
+  retries: 3
+  delay: 10
+  until: check_replication_slot.rc == 0
+
+- name: Debug replication slot check result
+  ansible.builtin.debug:
+    msg: "Replication slot 'backup_server_slot' exists: {{ check_replication_slot.stdout | trim == '1' }}"
+
+- name: Create replication slot for backup server
+  ansible.builtin.shell: |
+    psql -U {{ pguser }} -h {{ pghost }} -d {{ pgdatabase }} -c "SELECT * FROM pg_create_physical_replication_slot('backup_server_slot');"
+  when: check_replication_slot.stdout | trim != '1'
+  register: replication_slot_result
+  retries: 3
+  delay: 30
+  until: replication_slot_result.rc == 0

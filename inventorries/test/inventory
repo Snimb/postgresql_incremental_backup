@@ -1,0 +1,36 @@
+[db_server]
+ol941
+
+[backup_server]
+ol942
+
+[db:children]
+db_server
+backup_server
+
+[db:vars]
+db_ip=192.168.56.128
+db_name=ol941
+backup_server_ip=192.168.56.129
+backup_server_name=ol942
+
+# PostgreSQL configuration
+postgres_user=postgres
+postgres_password=secure_password
+postgres_host=localhost
+pgversion=17
+pgport=5432
+
+# Backup Configuration
+backup_directory=/var/lib/pgsql/17/backups
+encryption_key=secure_key_here
+pg_verifybackup=/usr/local/bin/pg_verifybackup
+pg_combinebackup=/usr/local/bin/pg_combinebackup
+
+# PostgreSQL paths and other configuration
+pgbin=/usr/pgsql-17/bin
+pgscripts=/data/17/scripts
+pgdata=/data/17/data
+pguser=postgres
+pgcluster=rg-test
+pgrepuser=repluser

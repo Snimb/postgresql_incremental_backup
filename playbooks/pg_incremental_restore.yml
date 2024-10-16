@@ -1,0 +1,75 @@
+- name: PostgreSQL Incremental Restore
+  hosts: backup_server
+  become: yes
+  become_user: "{{ pguser }}"
+  tasks:
+    # Step 1: Get available full backups
+    - name: Get available full backups
+      ansible.builtin.shell: |
+        ls -td {{ pgbkup }}/full* 2>/dev/null
+      register: available_full_backups
+
+    - name: Fail if no full backups are found
+      ansible.builtin.fail:
+        msg: "No full backups found in the directory {{ pgbkup }}"
+      when: available_full_backups.stdout_lines | length == 0
+
+    - name: Debug available full backups
+      ansible.builtin.debug:
+        msg: "Available full backups: {{ available_full_backups.stdout_lines }}"
+
+    # Step 2: Use vars_prompt to ask the user to select a full backup from the available list
+    - name: Prompt user to select a full backup
+      vars_prompt:
+        - name: selected_full_backup
+          prompt: |
+            Please enter the full backup directory you want to restore from the list below.
+            Available full backups:
+            {{ available_full_backups.stdout_lines }}
+          private: no
+      # Converting the entered path to ensure it's trimmed and correct
+      vars:
+        available_full_backups: "{{ available_full_backups.stdout_lines }}"
+
+    # Step 3: Get available incremental backups for selected full backup
+    - name: Get available incremental backups for selected full backup
+      ansible.builtin.shell: |
+        ls -trd {{ selected_full_backup }}/incremental_* 2>/dev/null
+      register: available_incremental_backups
+
+    - name: Debug available incremental backups
+      ansible.builtin.debug:
+        msg: "Available incremental backups: {{ available_incremental_backups.stdout_lines }}"
+
+    - name: Fail if no incremental backups are found
+      ansible.builtin.fail:
+        msg: "No incremental backups found for {{ selected_full_backup }}"
+      when: available_incremental_backups.stdout_lines | length == 0
+
+    # Step 4: Use vars_prompt to ask the user to select incremental backups from the available list
+    - name: Prompt user to select incremental backups (comma-separated)
+      vars_prompt:
+        - name: selected_incremental_backups
+          prompt: |
+            Please enter the incremental backup directories to restore (comma-separated), or press Enter to skip.
+            Available incremental backups:
+            {{ available_incremental_backups.stdout_lines }}
+          private: no
+
+    # Step 5: Parse the user input for incremental backups
+    - name: Parse user input for incremental backups
+      ansible.builtin.set_fact:
+        incremental_backup_list: "{{ selected_incremental_backups.split(',') | map('trim') | select('length') | list }}"
+      when: selected_incremental_backups | length > 0
+
+    # Step 6: Restore the selected backup and incremental backups
+    - name: Restore selected backup
+      import_tasks: ../roles/restore/tasks/restore_backup.yml
+      vars:
+        selected_full_backup: "{{ selected_full_backup }}"
+        incremental_backup_list: "{{ incremental_backup_list }}"
+
+
+    - name: Perform Point-in-Time Recovery (PITR)
+      import_tasks: ../roles/restore/tasks/pit_restore.yml
+      when: pit_enabled is defined and pit_enabled

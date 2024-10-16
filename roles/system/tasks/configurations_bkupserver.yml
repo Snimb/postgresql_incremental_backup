@@ -1,0 +1,23 @@
+- name: Ensure the backup server's hostname is resolvable
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ backup_server_ip }} {{ backup_server_name }}"
+    state: present
+  become_method: ansible.builtin.sudo
+
+- name: Ensure the backup server's hostname is resolvable
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ db_ip }} {{ db_name }}"
+    state: present
+  become_method: ansible.builtin.sudo
+    
+- name: Open port 5432 on the firewall (PostgreSQL)
+  ansible.builtin.command:
+    cmd: "firewall-cmd --add-port=5432/tcp --permanent"
+  become_method: ansible.builtin.sudo
+
+- name: Reload firewall to apply changes
+  ansible.builtin.command:
+    cmd: "firewall-cmd --reload"
+  become_method: ansible.builtin.sudo

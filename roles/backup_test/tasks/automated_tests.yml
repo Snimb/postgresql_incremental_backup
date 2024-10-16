@@ -1,0 +1,7 @@
+---
+- name: Run Automated Test Queries
+  shell: |
+    psql -h localhost -U {{ postgres_user }} -f /var/lib/pgsql/test_restore/test_queries.sql
+  register: test_result
+  retries: 3
+  until: test_result is succeeded
