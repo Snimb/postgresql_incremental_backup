@@ -53,7 +53,7 @@
     latest_full_backup="{{ latest_full_backup.stdout | trim }}"
     incremental_backup_dir="${latest_full_backup}/incremental_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
     mkdir -p ${incremental_backup_dir}
-    pg_basebackup -h {{ db_ip }} -U {{ backupuser }} -p {{ pgport }} --incremental={{ backup_manifest }} -Ft --gzip --wal-method=none --progress --manifest-checksums=SHA256 -D ${incremental_backup_dir}
+    pg_basebackup --host={{ db_ip }} --username={{ backupuser }} --port={{ pgport }} --incremental={{ backup_manifest }} --format=tar --gzip --wal-method=stream --manifest-checksums={{ checksum_algorithm }} --pgdata=${incremental_backup_dir}
   become_user: "{{ pguser }}"
   when: full_backup_exists
   register: incremental_backup_result

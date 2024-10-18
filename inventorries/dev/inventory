@@ -13,7 +13,7 @@ db_ip=192.168.56.128
 db_name=testpgdb
 backup_server_ip=192.168.56.129
 backup_server_name=testbkupserver
-db_listen_address=*
+
 # PostgreSQL configuration
 pghost=localhost
 pgversion=17
@@ -22,6 +22,7 @@ pguser=postgres
 pgdatabase=postgres
 pgcluster=rg-dev
 backupuser=bkuser
+checksum_algorithm=SHA256
 pgdata=/var/lib/pgsql/17/data
 pglog=/var/lib/pgsql/17/data/log
 pgbkup=/var/lib/pgsql/17/backups

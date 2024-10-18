@@ -1,1 +1,6 @@
 TODO: 
+Restore backups
+PITR
+backup tests
+backup fail alert
+Encrypt backups at rest

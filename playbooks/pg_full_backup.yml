@@ -1,4 +1,4 @@
-- name: PostgreSQL streaming WAL setup
+- name: PostgreSQL streaming WAL setup db server
   hosts: db_server
   become_user: "{{ pguser }}"  
   become: true
@@ -7,14 +7,17 @@
       import_tasks: ../roles/backup/tasks/wal_streaming_db.yml
       register: wal_streaming_dbpg_result
 
-- name: PostgreSQL Backup and WAL streaming setup
+- name: PostgreSQL WAL streaming setup backup server
+  hosts: backup_server
+  become: true
+  tasks:
+    - name: Perform WAL streaming setup on backup_server
+      import_tasks: ../roles/backup/tasks/wal_streaming_bkupserver.yml
+
+- name: PostgreSQL full backup
   hosts: backup_server
   become_user: "{{ pguser }}"  
   become: true
   tasks:
     - name: Perform full backup
       import_tasks: ../roles/backup/tasks/full_backup.yml
-
-    - name: Perform WAL streaming setup on backup_server
-      import_tasks: ../roles/backup/tasks/wal_streaming_bkupserver.yml
-

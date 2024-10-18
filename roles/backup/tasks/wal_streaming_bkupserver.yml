@@ -3,20 +3,19 @@
     path: "{{ pgbkup }}/wal_logs"
     state: directory
     mode: '0700'
+  become_user: "{{ pguser }}"  
 
 - name: Create pg_receivewal systemd service
   ansible.builtin.template:
     src: ../templates/pg_receivewal.service.j2
     dest: /etc/systemd/system/pg_receivewal.service
     mode: '0644'
-  become: true
-  become_user: root
+  become_method: ansible.builtin.sudo
 
 - name: Reload systemd to recognize the new pg_receivewal service
   ansible.builtin.systemd:
     daemon_reload: yes
-  become: true
-  become_user: root
+  become_method: ansible.builtin.sudo
 
 
 - name: Enable and start pg_receivewal service
@@ -24,6 +23,5 @@
     name: pg_receivewal
     enabled: yes
     state: started
-  become: true
-  become_user: root
+  become_method: ansible.builtin.sudo
 

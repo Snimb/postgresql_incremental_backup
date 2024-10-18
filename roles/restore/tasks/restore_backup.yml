@@ -1,13 +1,3 @@
-# Step 0: Get a list of available full backups
-- name: Get available full backups
-  ansible.builtin.shell: |
-    ls -td {{ pgbkup }}/full* 2>/dev/null
-  register: available_full_backups
-
-- name: Debug the available full backups
-  ansible.builtin.debug:
-    msg: "Available full backups: {{ available_full_backups.stdout_lines }}"
-
 # Step 1: Ensure the selected full backup directory exists
 - name: Ensure selected full backup directory exists
   ansible.builtin.stat:

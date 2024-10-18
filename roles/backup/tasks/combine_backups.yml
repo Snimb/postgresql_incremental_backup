@@ -18,9 +18,13 @@
     suffix: _full_extracted
   register: temp_full_backup_dir
 
-- name: Extract the Full Backup
+- name: Extract the Full Backup (including pg_wal.tar.gz)
   ansible.builtin.shell: |
     tar -xzf {{ latest_full_backup.stdout }}/base.tar.gz -C {{ temp_full_backup_dir.path }}
+    if [ -f "{{ latest_full_backup.stdout }}/pg_wal.tar.gz" ]; then
+      mkdir -p {{ temp_full_backup_dir.path }}/pg_wal
+      tar -xzf {{ latest_full_backup.stdout }}/pg_wal.tar.gz -C {{ temp_full_backup_dir.path }}/pg_wal
+    fi
   when: latest_full_backup.stdout | length > 0
 
 - name: Copy full backup manifest (from remote server)
@@ -30,7 +34,7 @@
     remote_src: yes
   when: latest_full_backup.stdout | length > 0
 
-    # Step 3: Identify and extract incremental backups
+# Step 3: Identify and extract incremental backups
 - name: Get List of Incremental Backup Directories
   ansible.builtin.shell: |
     ls -trd {{ latest_full_backup.stdout }}/incremental_* 2>/dev/null
@@ -40,10 +44,14 @@
   ansible.builtin.debug:
     msg: "Incremental backup directories: {{ incremental_backups.stdout_lines }}"
 
-- name: Create temporary directories for each incremental backup and extract
+- name: Create temporary directories for each incremental backup and extract (including pg_wal.tar.gz)
   ansible.builtin.shell: |
     temp_dir=$(mktemp -d /tmp/incremental_extracted_XXXX)
     tar -xzf {{ item }}/base.tar.gz -C $temp_dir
+    if [ -f "{{ item }}/pg_wal.tar.gz" ]; then
+      mkdir -p $temp_dir/pg_wal
+      tar -xzf {{ item }}/pg_wal.tar.gz -C $temp_dir/pg_wal
+    fi
     echo $temp_dir
   loop: "{{ incremental_backups.stdout_lines }}"
   register: extracted_incrementals
@@ -68,19 +76,28 @@
     path: "{{ pgbkup }}/full_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
     state: absent
 
+# Step 6: Combine Full and Incremental Backups into a New Full Backup
 - name: Combine Full and Incremental Backups into a New Full Backup
   ansible.builtin.shell: |
     combined_dir={{ pgbkup }}/full_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}
     mkdir -p $combined_dir
-    pg_combinebackup -o $combined_dir {{ temp_full_backup_dir.path }} {{ extracted_incrementals.results | map(attribute='stdout') | join(' ') }}
+    pg_combinebackup --output=$combined_dir {{ temp_full_backup_dir.path }} {{ extracted_incrementals.results | map(attribute='stdout') | join(' ') }}
     cd $combined_dir
-    tar --exclude="backup_manifest" --exclude="base.tar.gz" -czf base.tar.gz .
+    tar --exclude="backup_manifest" --exclude="pg_wal/*" --include="pg_wal/archive_status/*" --include="pg_wal/summaries/*" -czf base.tar.gz .
+    if [ -d "$combined_dir/pg_wal" ]; then
+      mkdir -p $combined_dir/pg_wal_only
+      find $combined_dir/pg_wal -maxdepth 1 -type f ! -name "archive_status" ! -name "summaries" -exec cp {} $combined_dir/pg_wal_only/ \;
+      tar -czf pg_wal.tar.gz -C $combined_dir/pg_wal_only .
+      rm -rf $combined_dir/pg_wal_only
+      find $combined_dir/pg_wal -maxdepth 1 -type f ! -name "archive_status" ! -name "summaries" -exec rm {} \;
+    fi
     shopt -s extglob
-    rm -rf !(base.tar.gz|backup_manifest)
+    rm -rf !(base.tar.gz|pg_wal.tar.gz|backup_manifest)
   register: combine_backup_result
   retries: 3
   delay: 30
   until: combine_backup_result.rc == 0
+
 
 - name: Debug the result of pg_combinebackup
   ansible.builtin.debug:

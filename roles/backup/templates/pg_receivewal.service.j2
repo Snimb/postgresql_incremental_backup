@@ -1,9 +1,13 @@
 [Unit]
 Description=PostgreSQL WAL streaming service for pg_receivewal
+After=network.target
 
 [Service]
 ExecStart={{ pgbin }}/pg_receivewal -D {{ pgbkup }}/wal_logs --slot=backup_server_slot --host={{ db_ip }} --port={{ pgport }} --user={{ backupuser }} --synchronous
 Restart=always
+RestartSec=10s
+StartLimitBurst=5
+StartLimitIntervalSec=300
 User={{ pguser }}
 Type=simple
 StandardOutput=journal

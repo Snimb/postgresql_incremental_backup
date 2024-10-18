@@ -1,6 +1,6 @@
 - name: Create Full Backup of db server to Backup Server
   ansible.builtin.shell: |
-    pg_basebackup -h {{ db_ip }} -U {{ backupuser }} -p {{ pgport }} -Ft --gzip --wal-method=none --progress --manifest-checksums=SHA256 -D {{ pgbkup }}/full_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}
+    pg_basebackup --host={{ db_ip }} --username={{ backupuser }} --port={{ pgport }} --format=tar --gzip --wal-method=stream --manifest-checksums={{ checksum_algorithm }} --pgdata={{ pgbkup }}/full_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}
   register: full_backup_result
   retries: 3
   delay: 30
