@@ -18,7 +18,7 @@
     suffix: _full_extracted
   register: temp_full_backup_dir
 
-- name: Extract the Full Backup (including pg_wal.tar.gz)
+- name: Extract the Full Backup
   ansible.builtin.shell: |
     tar -xzf {{ latest_full_backup.stdout }}/base.tar.gz -C {{ temp_full_backup_dir.path }}
     if [ -f "{{ latest_full_backup.stdout }}/pg_wal.tar.gz" ]; then
@@ -27,7 +27,7 @@
     fi
   when: latest_full_backup.stdout | length > 0
 
-- name: Copy full backup manifest (from remote server)
+- name: Copy full backup manifest
   ansible.builtin.copy:
     src: "{{ latest_full_backup.stdout }}/backup_manifest"
     dest: "{{ temp_full_backup_dir.path }}/backup_manifest"
@@ -57,7 +57,7 @@
   register: extracted_incrementals
 
 # Step 4: Copy backup manifests from incremental backups to their respective extracted directories
-- name: Copy incremental backup manifests (from remote server)
+- name: Copy incremental backup manifests
   ansible.builtin.copy:
     src: "{{ item.0 }}/backup_manifest"
     dest: "{{ item.1.stdout }}/backup_manifest"
@@ -83,7 +83,7 @@
     mkdir -p $combined_dir
     pg_combinebackup --output=$combined_dir {{ temp_full_backup_dir.path }} {{ extracted_incrementals.results | map(attribute='stdout') | join(' ') }}
     cd $combined_dir
-    tar --exclude="backup_manifest" --exclude="pg_wal/*" --include="pg_wal/archive_status/*" --include="pg_wal/summaries/*" -czf base.tar.gz .
+    tar --exclude="./pg_wal/[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]" --exclude="./backup_manifest" -czf base.tar.gz .
     if [ -d "$combined_dir/pg_wal" ]; then
       mkdir -p $combined_dir/pg_wal_only
       find $combined_dir/pg_wal -maxdepth 1 -type f ! -name "archive_status" ! -name "summaries" -exec cp {} $combined_dir/pg_wal_only/ \;
