@@ -1,0 +1,122 @@
+- name: PostgreSQL Incremental Restore
+  hosts: backup_server
+  become: yes
+  become_user: "{{ pguser }}"
+  tasks:
+    # Step 1: Get available full backups
+    - name: Get available full backups
+      ansible.builtin.shell: |
+        ls -td {{ pgbkup }}/full* 2>/dev/null
+      register: available_full_backups
+
+    - name: Fail if no full backups are found
+      ansible.builtin.fail:
+        msg: "No full backups found in the directory {{ pgbkup }}"
+      when: available_full_backups.stdout_lines | length == 0
+
+    - name: Debug available full backups
+      ansible.builtin.debug:
+        msg: "Available full backups: {{ available_full_backups.stdout_lines }}"
+
+    # Step 2: Assign numbers to each full backup
+    - name: Set numbered list of full backups
+      ansible.builtin.set_fact:
+        numbered_full_backups: "{{ available_full_backups.stdout_lines | zip(range(1, available_full_backups.stdout_lines | length + 1)) | map('reverse') | list }}"
+
+    - name: Display numbered full backups
+      ansible.builtin.debug:
+        msg: "Available full backups:\n{% for number, path in numbered_full_backups %}{{ number }}: {{ path }}\n{% endfor %}"
+
+    # Step 3: Prompt user to select a full backup by number
+    - name: Prompt user to select a full backup by number
+      ansible.builtin.pause:
+        prompt: |
+          Please enter the number of the full backup you want to restore from the list below:
+          Available full backups:
+          {% for number, path in numbered_full_backups %}
+          {{ number }}: {{ path }}
+          {% endfor %}
+      register: full_backup_input
+
+    - name: Validate and set selected full backup
+      ansible.builtin.set_fact:
+        selected_full_backup: "{{ (numbered_full_backups | selectattr(0, 'equalto', (full_backup_input.user_input | int))) | map('last') | first }}"
+      when: full_backup_input.user_input | int is in (numbered_full_backups | map('first') | list)
+
+    # Step 4: Get available incremental backups for selected full backup
+    - name: Get available incremental backups for selected full backup
+      ansible.builtin.shell: |
+        ls -trd {{ selected_full_backup }}/incremental_* 2>/dev/null
+      register: available_incremental_backups
+
+    - name: Debug available incremental backups
+      ansible.builtin.debug:
+        msg: "Available incremental backups: {{ available_incremental_backups.stdout_lines }}"
+
+    - name: Set numbered list of incremental backups
+      ansible.builtin.set_fact:
+        numbered_incremental_backups: "{{ available_incremental_backups.stdout_lines | zip(range(1, available_incremental_backups.stdout_lines | length + 1)) | map('reverse') | list }}"
+      when: available_incremental_backups.stdout_lines | length > 0
+
+    - name: Display incremental backup options
+      ansible.builtin.debug:
+        msg: |
+          Available incremental backups:
+          {% for number, path in numbered_incremental_backups %}
+          {{ number }}: {{ path }}
+          {% endfor %}
+      when: numbered_incremental_backups is defined
+
+    # Step 5.1: Initialize the incremental backup combinations with an empty list
+    - name: Initialize incremental backup combinations
+      ansible.builtin.set_fact:
+        incremental_backup_combinations: [ [] ]
+      when: numbered_incremental_backups is defined
+
+    # Step 5.2: Generate incremental backup combinations iteratively
+    - name: Generate incremental backup combination choices iteratively
+      ansible.builtin.set_fact:
+        incremental_backup_combinations: "{{ incremental_backup_combinations + [ numbered_incremental_backups[:loop_index + 1] | map('last') | list ] }}"
+      loop: "{{ range(0, numbered_incremental_backups | length) | list }}"
+      loop_control:
+        index_var: loop_index
+      when: numbered_incremental_backups is defined
+
+    # Step 5.3: Display incremental backup combination options
+    - name: Display incremental backup combination options
+      ansible.builtin.debug:
+        msg: |
+          Available incremental backup options:
+          {% for combination in incremental_backup_combinations %}
+          {{ loop.index0 }}: {{ combination }}
+          {% endfor %}
+      when: incremental_backup_combinations is defined
+
+    # Step 6: Prompt user to select incremental backup combination by number
+    - name: Prompt user to select incremental backup combination by number
+      ansible.builtin.pause:
+        prompt: |
+          Please enter the number of the incremental backup combination to restore, or enter 0 for no incremental backups:
+          {% for combination in incremental_backup_combinations %}
+          {{ loop.index0 }}: {{ combination }}
+          {% endfor %}
+      register: incremental_backup_input
+      when: incremental_backup_combinations is defined
+
+    # Step 7: Set selected incremental backups from user input
+    - name: Set fact for selected incremental backups
+      ansible.builtin.set_fact:
+        selected_incremental_backups: "{{ incremental_backup_combinations[incremental_backup_input.user_input | int] }}"
+      when: incremental_backup_combinations is defined and incremental_backup_input.user_input | int is in range(incremental_backup_combinations | length)
+
+    - name: Debug selected incremental backups
+      ansible.builtin.debug:
+        msg: "Selected incremental backups: {{ selected_incremental_backups }}"
+      when: selected_incremental_backups is defined
+
+    # Step 8: Restore the selected backup and incremental backups
+    - name: Restore selected backup
+      import_tasks: ../roles/restore/tasks/restore_backup.yml
+      vars:
+        selected_full_backup: "{{ selected_full_backup }}"
+        incremental_backup_list: "{{ selected_incremental_backups }}"

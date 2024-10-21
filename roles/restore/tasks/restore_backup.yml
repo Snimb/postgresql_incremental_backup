@@ -16,31 +16,50 @@
     suffix: _full_restore
   register: temp_full_restore_dir
 
-# Step 3: Extract the full backup
-- name: Extract the full backup
+# Step 3: Extract the base backup (base.tar.gz)
+- name: Extract the base backup
   ansible.builtin.shell: |
     tar -xzf {{ selected_full_backup }}/base.tar.gz -C {{ temp_full_restore_dir.path }}
   register: extract_full_result
 
-- name: Debug full backup extraction result
+- name: Debug base backup extraction result
   ansible.builtin.debug:
-    msg: "Full backup extraction result: {{ extract_full_result.stdout }}"
+    msg: "Base backup extraction result: {{ extract_full_result.stdout }}"
 
-# Step 4: Ensure the selected incremental backups exist (if any)
-- name: Ensure selected incremental backup directories exist
+# Step 4: Check if backup_manifest exists for full backup
+- name: Check if backup_manifest exists for full backup
   ansible.builtin.stat:
-    path: "{{ item }}"
-  with_items: "{{ incremental_backup_list }}"
-  register: incremental_backup_stats
-  when: incremental_backup_list | length > 0
+    path: "{{ selected_full_backup }}/backup_manifest"
+  register: full_backup_manifest_stat
 
-- name: Fail if any incremental backup does not exist
-  ansible.builtin.fail:
-    msg: "Incremental backup directory {{ item.item }} does not exist."
-  with_items: "{{ incremental_backup_stats.results }}"
-  when: not item.stat.exists
+# Step 4.1: Copy the backup_manifest file for full backup if it exists
+- name: Copy full backup_manifest if it exists
+  ansible.builtin.copy:
+    src: "{{ selected_full_backup }}/backup_manifest"
+    dest: "{{ temp_full_restore_dir.path }}/backup_manifest"
+    remote_src: true
+  when: full_backup_manifest_stat.stat.exists
 
-# Step 5: Create temporary directories for incremental backups
+# Step 5: Ensure pg_wal.tar.gz exists (check before extracting it)
+- name: Check if pg_wal.tar.gz exists
+  ansible.builtin.stat:
+    path: "{{ selected_full_backup }}/pg_wal.tar.gz"
+  register: pg_wal_stat
+
+# Step 6: Ensure pg_wal directory exists (only if pg_wal.tar.gz exists)
+- name: Ensure pg_wal directory exists
+  ansible.builtin.file:
+    path: "{{ temp_full_restore_dir.path }}/pg_wal"
+    state: directory
+  when: pg_wal_stat.stat.exists
+
+# Step 7: Extract pg_wal.tar.gz for full backup
+- name: Extract pg_wal.tar.gz for full backup
+  ansible.builtin.shell: |
+    tar -xzf {{ selected_full_backup }}/pg_wal.tar.gz -C {{ temp_full_restore_dir.path }}/pg_wal
+  when: pg_wal_stat.stat.exists
+
+# Step 8: Create temporary directories for incremental backups
 - name: Create temporary directories for incremental backups
   ansible.builtin.shell: |
     temp_dir=$(mktemp -d /tmp/incremental_restore_XXXX)
@@ -50,28 +69,87 @@
   register: extracted_incrementals
   when: incremental_backup_list | length > 0
 
-# Step 6: Perform the pg_combinebackup to combine full and incremental backups
+# Step 9: Check if backup_manifest exists for incremental backups
+- name: Check if backup_manifest exists for incremental backups
+  ansible.builtin.stat:
+    path: "{{ item }}/backup_manifest"
+  loop: "{{ incremental_backup_list }}"
+  register: incremental_backup_manifest_stats
+  loop_control:
+    index_var: loop_index
+  when: incremental_backup_list | length > 0
+
+# Step 9.1: Copy backup_manifest file for incremental backups if it exists
+- name: Copy incremental backup_manifest if it exists
+  ansible.builtin.copy:
+    src: "{{ item.item }}/backup_manifest"
+    dest: "{{ extracted_incrementals.results[loop_index].stdout }}/backup_manifest"
+    remote_src: true
+  loop: "{{ incremental_backup_manifest_stats.results }}"
+  loop_control:
+    index_var: loop_index
+  when: item.stat.exists
+
+# Step 10: Check if pg_wal.tar.gz exists for incremental backups
+- name: Check if pg_wal.tar.gz exists for incremental backups
+  ansible.builtin.stat:
+    path: "{{ item }}/pg_wal.tar.gz"
+  loop: "{{ incremental_backup_list }}"
+  register: pg_wal_stats
+  when: incremental_backup_list | length > 0
+
+# Step 11: Ensure pg_wal directory exists for incremental backups
+- name: Ensure pg_wal directory exists for incremental backup
+  ansible.builtin.file:
+    path: "{{ extracted_incrementals.results[loop_index].stdout }}/pg_wal"
+    state: directory
+  loop: "{{ pg_wal_stats.results }}"
+  loop_control:
+    index_var: loop_index
+    label: "{{ item.item }}"
+  when: item.stat.exists and incremental_backup_list | length > 0
+
+# Step 12: Combine pg_wal_stats and extracted_incrementals results
+- name: Combine pg_wal_stats and extracted_incrementals results
+  ansible.builtin.set_fact:
+    combined_results: "{{ pg_wal_stats.results | zip(extracted_incrementals.results) | list }}"
+
+# Step 13: Extract pg_wal.tar.gz for incremental backups
+- name: Extract pg_wal.tar.gz for incremental backups
+  ansible.builtin.shell: |
+    tar -xzf {{ item.0.item }}/pg_wal.tar.gz -C {{ item.1.stdout }}/pg_wal
+  loop: "{{ combined_results }}"
+  when: item.0.stat.exists
+  loop_control:
+    label: "{{ item.0.item }}"
+
+# Step 14: Combine full and incremental backups using pg_combinebackup
 - name: Combine full and incremental backups using pg_combinebackup
   ansible.builtin.shell: |
     combined_restore_dir={{ pgbkup }}/restore_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}
     mkdir -p $combined_restore_dir
     pg_combinebackup -o $combined_restore_dir {{ temp_full_restore_dir.path }} {{ extracted_incrementals.results | map(attribute='stdout') | join(' ') }}
-    cd $combined_restore_dir
-    tar --exclude="backup_manifest" --exclude="base.tar.gz" -czf base.tar.gz .
-    shopt -s extglob
-    rm -rf !(base.tar.gz|backup_manifest)
+    if [ $? -eq 0 ]; then
+      rm -f $combined_restore_dir/backup_label
+      rm -f $combined_restore_dir/backup_manifest
+    fi  
   register: combine_backup_result
 
 - name: Debug pg_combinebackup result
   ansible.builtin.debug:
     msg: "pg_combinebackup result: {{ combine_backup_result.stdout }}"
 
-# Step 7: Clean up temporary directories after the restore
+- name: Fail if pg_combinebackup failed
+  ansible.builtin.fail:
+    msg: "pg_combinebackup command failed: {{ combine_backup_result.stderr }}"
+  when: combine_backup_result.rc != 0
+
+# Step 15: Clean up temporary directories after the restore
 - name: Remove temporary directories for full and incremental restores
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
-  with_items:
+  loop:
     - "{{ temp_full_restore_dir.path }}"
     - "{{ extracted_incrementals.results | map(attribute='stdout') | list }}"
   when: extracted_incrementals is defined
